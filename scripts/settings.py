@@ -1,0 +1,3 @@
+TITLE = "Music Manager"
+SIZE = (400, 750)
+DEFAULT_VOLUME = 50

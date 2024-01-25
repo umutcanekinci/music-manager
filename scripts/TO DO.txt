@@ -1,0 +1,16 @@
+TO-DO
+_____________________________
+
+1) Progress Bar
+2) Music Photograph
+3) Music Download Text And Rerendering
+4) Keyboard Shortcuts
+5) Developer Name
+6) Close folder
+7) Repeat / Mix
+8) Design improvment
+
+
+
+# PhotoImage(file="x.png")
+# ImageTk.PhotoImage(Image.open("y.png/jpg"))<
