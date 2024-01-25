@@ -12,6 +12,9 @@ from scripts.canvas_button import CanvasButton
 import requests
 from io import BytesIO
 import eyed3 # to get photo
+from mutagen.id3 import ID3, APIC
+
+#from stagger import read_tag, id3
 
 #endregion
 
@@ -252,8 +255,40 @@ class Application(Tk):
         self.bind("<KeyRelease>", self.HandleKeys)
 
 
-    def GetAlbumPhoto(self, path):
+    def GetMusicPhoto(self, path):
 
+        print(path)
+        
+        audiofile = ID3(path)
+        print(audiofile)
+        if 'APIC:Cover' in audiofile:
+        # Extract album art data from ID3 tag using mutagen
+            image_data = audiofile['APIC:Cover'].data
+        
+        else:
+            return
+
+        """
+
+        # WAY 2
+
+        audiofile = eyed3.load(path)
+
+
+        if audiofile.tag and audiofile.tag.frame_set.get('APIC'):
+            print("a")
+            # Extract album art data from ID3 tag
+            album_art_data = audiofile.tag.frame_set['APIC'][0].image
+
+            image_data = album_art_data
+
+        else:
+            return
+        """
+
+        """  
+        # WAY 1
+        
         artist, track_name = GetMetadata(path)
 
         if artist and track_name:
@@ -264,9 +299,8 @@ class Application(Tk):
         else:
 
             print("Metadata not found.")
-            
-        api_key = 'c5ef518a3f64c01a13e4591d8d1d1214'
 
+        api_key = 'c5ef518a3f64c01a13e4591d8d1d1214'
         url = f'http://ws.audioscrobbler.com/2.0/?method=track.getInfo&api_key={api_key}&artist={artist}&track={track_name}&format=json'
 
         try:
@@ -280,12 +314,12 @@ class Application(Tk):
             # Download the image
             image_data = requests.get(image_url).content
 
-            # Display the image on the Tkinter window
-            self.DisplayMusicImage(image_data)
-
         except Exception as e:
 
             print(f"Error: {e}")
+        """
+
+        self.DisplayMusicImage(image_data)
 
     def DisplayMusicImage(self, image_data):
 
@@ -506,7 +540,7 @@ class Application(Tk):
         
         self.Resume()
         self.musicName.config(text = fileName.removesuffix('.mp3'))
-        self.GetAlbumPhoto(filePath)
+        self.GetMusicPhoto(filePath)
         self.musicList.select_clear(0, END)
         self.musicList.select_set(index)
 
