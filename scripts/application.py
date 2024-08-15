@@ -157,8 +157,6 @@ class Application(Tk):
         self.LoadContent()
         self.bind("<KeyRelease>", self.HandleKeys)
 
-        
-
     #region Window Initialization
         
     def InitWindow(self):
@@ -382,8 +380,7 @@ class Application(Tk):
             self.volume, self.lastFolder, self.lastMusic, self.player.mix, self.repeat = settings
 
     #endregion
-
-    
+   
     def LoadContent(self) -> None:
 
         self.LoadFolders(self.GetFolders())
@@ -616,33 +613,36 @@ class Application(Tk):
             print('An unexpected error occured while trying to delete a music!')
             self.Exit()
 
+    def UpdateButtonImages(self) -> None:
+
+        self.player.mixButton.SetImage("./images/plus.png" if self.player.mix else "./images/mix.png")
+        self.resumePauseButton.SetImage("./images/pause.png" if self.player.isPlaying else "./images/resume.png")
+        self.repeatButton.SetImage("./images/plus.png" if self.player.repeat else "./images/repeat.png")
+
+    def UpdateMusicFrame(self):
+
+        music = self.player.lastMusic
+        
+        self.musicName.config(text = music.title)
+        self.GetMusicPhoto(music.path)
+        self.musicLength.config(text=music.convertedLength)
+        self.slider.config(value=0, to=music.length)
+        #self.UpdateTime(music.path, music.length)
+
     def OpenMusic(self, index) -> None:
         
         try:
 
-            # Play music
             music = self.filteredMusics[index]
             self.player.OpenPlayList(self.filteredMusics, music)
             self.selectedFolder = music.folder.id
 
-            # Update slider
-            metaData = MP3(music.path)
-            length = metaData.info.length
-            convertedLength = strftime('%M:%S', gmtime(length))
-            self.musicLength.config(text=convertedLength)
-            self.slider.config(value=0, to=length)
-
-            # Update gui
-            self.musicName.config(text = music.title)
-            self.GetMusicPhoto(music.path)
-            self.UpdateTime(music.path, length)
-
-            # Highlight playing music
-            self.musicList.Highlight(index)
+            self.UpdateMusicFrame()
+            self.HighlightPlayingMusic()
             self.UpdateButtonImages()
-        except:
 
-            # Delete music if it is corrupted
+        except:# Delete music if it is corrupted
+
             self.DeleteMusic(self.filteredMusics[index].id)
             self.LoadMusics(self.GetMusics())
             self.OpenFolder(self.selectedFolder)
@@ -663,6 +663,7 @@ class Application(Tk):
         # Update selected folder
         self.selectedFolder = id
         self.musicList.Update(FilterMusicList(self.player.folders[id].musics, self.keyword.get()))
+        self.HighlightPlayingMusic()
 
     def LoadFolders(self, folders) -> None:
 
@@ -681,26 +682,19 @@ class Application(Tk):
         self.player.AddMusic(*[(music[0], music[1], *GetMusicData(music[2], self.player.folders[music[1]])) for music in musics])
         self.filteredMusics = FilterMusicList(self.player.folders[self.selectedFolder].musics, self.keyword.get())
 
-    def Search(self, *args):
-        
-        self.filteredMusics = FilterMusicList(self.player.folders[self.selectedFolder].musics, self.keyword.get())
-        self.UpdateMusicList.Update(self.filteredMusics)
+    def HighlightPlayingMusic(self) -> None:
 
-        # Highlight playing music
         if self.player.lastMusic and self.player.lastMusic.title in self.musicList.get(0, END) and self.player.lastMusic.folder.id == self.selectedFolder:
             
             self.player.index = self.musicList.get(0, END).index(self.player.lastMusic.title)
-            self.musicList.HighlightMusic(self.player.index)
+            self.musicList.Highlight(self.player.index)
+   
+    def Search(self, *args):
+        
+        self.filteredMusics = FilterMusicList(self.player.folders[self.selectedFolder].musics, self.keyword.get())
+        self.musicList.Update(self.filteredMusics)
 
-        else:
-
-            pass # there is a bug
-
-    def UpdateButtonImages(self) -> None:
-
-        self.player.mixButton.SetImage("./images/plus.png" if self.player.mix else "./images/mix.png")
-        self.resumePauseButton.SetImage("./images/pause.png" if self.player.isPlaying else "./images/resume.png")
-        self.repeatButton.SetImage("./images/plus.png" if self.player.repeat else "./images/repeat.png")
+        self.HighlightPlayingMusic()
 
     def ResumePause(self) -> None:
         
@@ -720,13 +714,14 @@ class Application(Tk):
     def Next(self) -> None:
 
         self.player.Next()
-        self.OpenMusic(self.player.index)
+        self.UpdateMusicFrame()
+        self.HighlightPlayingMusic()
 
     def Previous(self) -> None:
 
         self.player.Previous()
-        self.OpenMusic(self.player.index)
-
+        self.UpdateMusicFrame()
+        self.HighlightPlayingMusic()
 
     #endregion
     
@@ -734,7 +729,7 @@ class Application(Tk):
 
         try:
 
-            if hasattr(self, 'index') and self.index:
+            if self.player.index:
 
                 self.database.Execute(f"UPDATE settings SET volume={self.volume}, last_folder={self.lastFolder}, last_music={self.index}, mix={1 if self.player.mix else 0}, repeat={1 if self.repeat else 0}")
 

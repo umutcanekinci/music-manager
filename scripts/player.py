@@ -20,7 +20,7 @@ class Player():
         self.playList = []
         self.mixList = []
         self.folders = {}
-        self.musics = []
+
         self.isPlaying = False
         self.lastMusic = None
         self.index = None
@@ -74,12 +74,13 @@ class Player():
 
         for musicID, folderID, fileName, ext, name, artist, title in args:
 
-            self.musics.append(Music(musicID, self.folders[folderID], fileName, ext, name, artist, title,))
+            Music(musicID, self.folders[folderID], fileName, ext, name, artist, title)
  
     def OpenPlayList(self, playList: list, music, start=True) -> None:
 
         self.playList = playList
         self.mixList.clear()
+        self.index = self.mixIndex = 0
         self.Play(music, start)
 
     def Play(self, music: Music, start=True, startValue: float=0) -> None:
@@ -153,17 +154,7 @@ class Player():
 
     def Previous(self) -> None:
 
-        if self.mix:
-
-            if self.mixIndex > 0:
-                
-                self.Play(self.mixList[self.mixIndex - 1])
-
-        else:
-
-            if self.index > 0:
-                
-                self.OpenPlayList(self.mixList if self.mix else self.playList, self.playList[self.index - 1])
+        self.Play(self.playList[self.index - 1])
 
     def Next(self) -> None:
 
@@ -185,12 +176,4 @@ class Player():
             
             if self.index < len(self.playList) - 1:
 
-                self.OpenPlayList(self.playList, self.playList[self.index + 1])
-
-    def GetMusicFromID(self, musicID) -> None:
-
-        for music in self.musics:
-
-            if music.id == musicID:
-
-                return music
+                self.Play(self.mixList[self.mixIndex + 1])
