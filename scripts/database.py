@@ -1,12 +1,11 @@
 #-# Import Packages #-#
-import sqlite3
-import sys
+from sqlite3 import connect
 from os import path, makedirs
 
 #-# Database Class #-#
 class Database():
 
-    def __init__(self, name):
+    def __init__(self, name) -> None:
 
         self.name = name
     
@@ -18,7 +17,7 @@ class Database():
 
                 makedirs('databases/')
 
-            self.connection = sqlite3.connect(("databases/" + self.name + ".db")) 
+            self.connection = connect(("databases/" + self.name + ".db")) 
 
         except Exception as error:
             
@@ -30,26 +29,26 @@ class Database():
 
             return True
         
-    def GetCursor(self):
+    def GetCursor(self) -> None:
 
         return self.connection.cursor()
     
-    def Execute(self, sql):
+    def Execute(self, sql, *paramaters) -> None:
         
         try:
             
-            return self.GetCursor().execute(sql)
+            return self.GetCursor().execute(sql, paramaters)
             
         except Exception as error:
 
             print("An error occured during execute sql code:", error)
             
-            return sys.exit()
+            return 
 
-    def Commit(self):
+    def Commit(self) -> None:
 
         self.connection.commit()
 
-    def Disconnect(self):
+    def Disconnect(self) -> None:
 
         self.connection.close()

@@ -8,7 +8,7 @@ from os import walk, rename, path
 import pygame
 from pytube import YouTube 
 from scripts.settings import *
-from scripts.canvas_button import CanvasButton
+
 from time import strftime, gmtime
 
 import requests
@@ -16,6 +16,12 @@ from io import BytesIO
 import eyed3 # to get photo
 from mutagen.id3 import ID3, APIC
 from mutagen.mp3 import MP3
+
+
+from scripts.player import Player
+from scripts.music import GetMusicData, FilterMusicList
+from scripts.canvas_button import CanvasButton
+from scripts.music_list import MusicList
 
 #from stagger import read_tag, id3
 
@@ -139,14 +145,19 @@ class Application(Tk):
 
     def __init__(self) -> None:
 
+        self.player = Player()
+
         super().__init__()
         pygame.init()
         pygame.mixer.init()
         self.InitWindow()
         self.InitWidgets()
         self.InitDatabase()
+
         self.LoadContent()
         self.bind("<KeyRelease>", self.HandleKeys)
+
+        
 
     #region Window Initialization
         
@@ -230,7 +241,7 @@ class Application(Tk):
         #region Multimedia Buttons Frame
 
         self.buttonCanvas = Canvas(self.musicFrame, bg="#505050", width=200, height=40, bd=0, highlightthickness=0, relief="ridge")
-        self.mixButton = CanvasButton(self.buttonCanvas, 0, 0, 32, 32, "./images/mix.png", self.Mix)
+        self.player.mixButton = CanvasButton(self.buttonCanvas, 0, 0, 32, 32, "./images/mix.png", self.Mix)
         self.previousButton = CanvasButton(self.buttonCanvas, 40, 0, 32, 32, "./images/previous.png", self.Previous)
         self.resumePauseButton = CanvasButton(self.buttonCanvas, 80, 0, 32, 32, "./images/resume.png", self.ResumePause)
         self.nextButton = CanvasButton(self.buttonCanvas, 120, 0, 32, 32, "./images/next.png",  self.Next)
@@ -266,13 +277,10 @@ class Application(Tk):
         self.folderFrame = Frame(self.mainFrame, bg="#505050")
         self.folderNavBarFrame = Frame(self.folderFrame, bg="#505050")        
         self.searchEntry = Entry(self.folderFrame, bg="#505050", fg="orange", textvariable=self.keyword)
-        self.musicList = Listbox(self.folderFrame, bg='white', fg='green', font=("Comic Sans MS", 12))
-
+        self.musicList = MusicList(self.folderFrame, 'white', 'green', ("Comic Sans MS", 12), 0, 70, self.width-40, 325, "nw", self.DoubleClickMusic)
         self.folderFrame.place(x=20, y=240, anchor="nw", width=self.width-40, height=375)
         self.folderNavBarFrame.place(x=0, y=0, anchor="nw", width=self.width-40, height=50)
         self.searchEntry.place(x=0, y=50, width=self.width-40, height=20)
-        self.musicList.place(x=0, y=70, anchor="nw", width=self.width-40, height=325)
-        self.musicList.bind('<Double-Button>', self.DoubleClickMusic)
 
         #endregion
 
@@ -371,81 +379,29 @@ class Application(Tk):
 
         else:
             
-            self.volume, self.lastFolder, self.lastMusic, self.mix, self.repeat = settings
+            self.volume, self.lastFolder, self.lastMusic, self.player.mix, self.repeat = settings
 
     #endregion
 
-    def Search(self, *args):
-
-        playingMusic = self.musicName.cget("text")
-        
-        self.filteredMusics = self.FilterMusicList()
-        self.OpenFolder(self.selectedFolder)
-
-        newList = self.musicList.get(0, END)
-
-        if playingMusic in newList:
-            
-            self.index = self.musicList.get(0, END).index(playingMusic)
-            self.musicList.activate(self.index)
-            self.musicList.select_set(self.index)
-
-        else:
-
-            pass # there is a bug
-        
-    def FilterMusicList(self) -> list:
-
-        keyword = self.keyword.get()
-
-        if keyword:
-            
-            return {folderID: {musicID: musicName for musicID, musicName in folder.items() if keyword.lower() in musicName.lower()} for folderID, folder in self.musics.items()}
-
-        return self.musics.copy()
-            
+    
     def LoadContent(self) -> None:
 
         self.LoadFolders(self.GetFolders())
-        self.LoadMusics(self.GetMusics())
-        
         self.RenderFolderBar()
 
-        if self.folders:
+        if self.player.folders:
 
-            if not self.lastMusic == None:
-
-                self.OpenFolder(self.lastFolder)
-                self.OpenMusic(self.lastMusic, False)
-
-            else:
-
-                if not hasattr(self, 'selectedFolder'):
-
-                    self.OpenFolder(list(self.folders.keys())[0])
-
-                else:
-
-                    self.OpenFolder(self.selectedFolder)
-
-            self.downloadButton["state"] = "normal"
+            self.LoadMusics(self.GetMusics())
+            self.OpenFolder(self.selectedFolder)
+            if not self.lastMusic == None: self.OpenMusic(self.lastMusic, False)
 
         else:
 
             self.warningLabel = Label(self.mainFrame, text='Please add a folder or drag a music to play it !')
             self.warningLabel.place(anchor='nw', x=80, y=370)
-            self.downloadButton["state"] = "disabled"
 
+        self.downloadButton["state"] = "normal" if self.selectedFolder else "disabled"
         self.UpdateButtonImages()
-        
-    def LoadFolders(self, folders) -> None:
-
-        self.folders = {folder[0]: (folder[1].replace('\\', '/')) for folder in folders}
-
-    def LoadMusics(self, musics) -> None:
-
-        self.musics = {key: {music[0]: music[2].replace('\\', '/') for music in musics if music[1] == key} for key in self.folders.keys()}
-        self.filteredMusics = self.FilterMusicList()
 
     def RenderFolderBar(self) -> None:
 
@@ -453,20 +409,14 @@ class Application(Tk):
         
         self.folderButtons = {}
         
-        for i, folder in enumerate(self.folders.items()):
+        for i, folder in enumerate(self.player.folders.values()):
         
-            self.folderButtons[folder[0]] = Button(self.folderNavBarFrame, bg='orange', fg='white', font=("Comic Sans MS", 12), text=folder[1].split('/')[-1], command=lambda t=folder[0]: self.OpenFolder(t))
-            self.folderButtons[folder[0]].place(x=i*100, y=0, anchor="nw", width=100, height=50)
+            self.folderButtons[folder.id] = Button(self.folderNavBarFrame, bg='orange', fg='white', font=("Comic Sans MS", 12), text=folder.name, command=lambda t=folder.id: self.OpenFolder(t))
+            self.folderButtons[folder.id].place(x=i*100, y=0, anchor="nw", width=100, height=50)
 
         self.plusImage = PhotoImage(file='images/plus.png')
         self.addFolderButton = Button(self.folderNavBarFrame, image=self.plusImage, bg='green', command=self.AddFolder)
-        self.addFolderButton.place(x=len(self.folders)*100, y=0, anchor="nw", width=60, height=50)
-
-    def UpdateButtonImages(self) -> None:
-
-        self.mixButton.SetImage("./images/plus.png" if self.mix else "./images/mix.png")
-        self.resumePauseButton.SetImage("./images/pause.png" if hasattr(self, 'isMusicPlaying') and self.isMusicPlaying else "./images/resume.png")
-        self.repeatButton.SetImage("./images/plus.png" if self.repeat else "./images/repeat.png")
+        self.addFolderButton.place(x=len(self.player.folders)*100, y=0, anchor="nw", width=60, height=50)
 
     def Slide(self, value):
 
@@ -589,20 +539,8 @@ class Application(Tk):
 
     def Download(self):
 
-        DownloadMP3(self.urlEntry.get(), self.folders[self.selectedFolder])
+        DownloadMP3(self.urlEntry.get(), self.player.folders[self.selectedFolder])
         self.RefreshFolder()
-
-    def OpenFolder(self, id) -> None:
-
-        if hasattr(self, 'selectedFolder'): self.folderButtons[self.selectedFolder].config(bg='orange')
-        self.folderButtons[id].config(bg='green')
-
-        self.selectedFolder = id
-        self.musicList.delete(0, END)
-
-        for musicName in self.filteredMusics[self.selectedFolder].values():
-            
-            self.musicList.insert(END, musicName.removesuffix(".mp3"))
 
     def ScanMusics(self, path, folderID):
 
@@ -623,7 +561,7 @@ class Application(Tk):
         self.database.Commit()
 
         # Then scan musics and insert them to table
-        self.ScanMusics(self.folders[self.selectedFolder], self.selectedFolder)
+        self.ScanMusics(self.player.folders[self.selectedFolder], self.selectedFolder)
 
         self.LoadContent()
 
@@ -635,7 +573,7 @@ class Application(Tk):
 
             alreadyExist = False
             
-            for folderPath in self.folders.values():
+            for folderPath in self.player.folders.values():
 
                 if folderPath == path:
 
@@ -668,40 +606,44 @@ class Application(Tk):
 
     def DeleteMusic(self, musicID):
 
-        self.database.Execute(f'DELETE FROM musics WHERE id={musicID}')
-        self.database.Commit()
+        try:
 
-    def OpenMusic(self, index, start=True) -> None:
+            self.database.Execute(f'DELETE FROM musics WHERE id={musicID}')
+            self.database.Commit()
+
+        except:
+
+            print('An unexpected error occured while trying to delete a music!')
+            self.Exit()
+
+    def OpenMusic(self, index) -> None:
         
         try:
 
-            self.index = index
-            self.lastFolder = self.selectedFolder
+            # Play music
+            music = self.filteredMusics[index]
+            self.player.OpenPlayList(self.filteredMusics, music)
+            self.selectedFolder = music.folder.id
 
-            fileName = list(self.filteredMusics[self.selectedFolder].values())[index]
-            folderPath = self.folders[self.selectedFolder]
-            filePath = folderPath + "/" + fileName
-
-            self.Play(filePath, start)
-
-            music = MP3(filePath)
-            length = music.info.length
+            # Update slider
+            metaData = MP3(music.path)
+            length = metaData.info.length
             convertedLength = strftime('%M:%S', gmtime(length))
             self.musicLength.config(text=convertedLength)
             self.slider.config(value=0, to=length)
 
-            self.musicName.config(text = fileName.removesuffix('.mp3'))
-            self.GetMusicPhoto(filePath)
-            self.UpdateTime(filePath, length)
+            # Update gui
+            self.musicName.config(text = music.title)
+            self.GetMusicPhoto(music.path)
+            self.UpdateTime(music.path, length)
 
-            self.musicList.select_clear(0, END)
-            self.musicList.select_set(index)
-            self.musicList.activate(index)
-
+            # Highlight playing music
+            self.musicList.Highlight(index)
+            self.UpdateButtonImages()
         except:
 
-            musicID = list(self.filteredMusics[self.selectedFolder].keys())[index]
-            self.DeleteMusic(musicID)
+            # Delete music if it is corrupted
+            self.DeleteMusic(self.filteredMusics[index].id)
             self.LoadMusics(self.GetMusics())
             self.OpenFolder(self.selectedFolder)
             self.OpenMusic(index)
@@ -712,66 +654,79 @@ class Application(Tk):
         index = widget.curselection()[0]
         self.OpenMusic(index)
 
-    #region Button Functions
+    def OpenFolder(self, id) -> None:
 
-    def Mix(self) -> None:
+        # Highlight selected folder
+        if self.selectedFolder: self.folderButtons[self.selectedFolder].config(bg='orange')
+        self.folderButtons[id].config(bg='green')
 
-        self.mix = not self.mix
-        self.UpdateButtonImages()
+        # Update selected folder
+        self.selectedFolder = id
+        self.musicList.Update(FilterMusicList(self.player.folders[id].musics, self.keyword.get()))
 
-    def Previous(self) -> None:
+    def LoadFolders(self, folders) -> None:
 
-        if hasattr(self, 'index') and self.index > 0:
-            
-            self.OpenMusic(self.index - 1)
+        self.player.AddFolder(*folders)
 
-    def Resume(self) -> None:
+        if self.player.folders:
 
-        pygame.mixer.music.unpause()
-        self.isMusicPlaying = True
-        self.UpdateButtonImages()
+            self.selectedFolder = self.lastFolder if self.lastFolder else list(self.player.folders.keys())[0]
 
-    def Pause(self) -> None:
-
-        pygame.mixer.music.pause()
-        self.isMusicPlaying = False
-        self.UpdateButtonImages()
-
-    def Play(self, filePath, start=True, startValue: float=0) -> None:
-
-        pygame.mixer.music.load(filePath)
-        pygame.mixer.music.play(-1 if self.repeat else 0, startValue)
-
-        if not start:
-
-            self.Pause()
-        
         else:
 
-            self.Resume()
+            self.selectedFolder = None
+
+    def LoadMusics(self, musics) -> None:
+
+        self.player.AddMusic(*[(music[0], music[1], *GetMusicData(music[2], self.player.folders[music[1]])) for music in musics])
+        self.filteredMusics = FilterMusicList(self.player.folders[self.selectedFolder].musics, self.keyword.get())
+
+    def Search(self, *args):
+        
+        self.filteredMusics = FilterMusicList(self.player.folders[self.selectedFolder].musics, self.keyword.get())
+        self.UpdateMusicList.Update(self.filteredMusics)
+
+        # Highlight playing music
+        if self.player.lastMusic and self.player.lastMusic.title in self.musicList.get(0, END) and self.player.lastMusic.folder.id == self.selectedFolder:
+            
+            self.player.index = self.musicList.get(0, END).index(self.player.lastMusic.title)
+            self.musicList.HighlightMusic(self.player.index)
+
+        else:
+
+            pass # there is a bug
+
+    def UpdateButtonImages(self) -> None:
+
+        self.player.mixButton.SetImage("./images/plus.png" if self.player.mix else "./images/mix.png")
+        self.resumePauseButton.SetImage("./images/pause.png" if self.player.isPlaying else "./images/resume.png")
+        self.repeatButton.SetImage("./images/plus.png" if self.player.repeat else "./images/repeat.png")
 
     def ResumePause(self) -> None:
         
-        if hasattr(self, 'index'):
-
-            if self.isMusicPlaying:
-
-                self.Pause()
-
-            else:
-
-                self.Resume()
-
-    def Next(self) -> None:
-
-        if hasattr(self, 'index') and self.index < len(self.filteredMusics[self.selectedFolder]) - 1:
-
-            self.OpenMusic(self.index + 1)
+        self.player.ResumePause()
+        self.UpdateButtonImages()
 
     def Repeat(self) -> None:
 
-        self.repeat = not self.repeat
+        self.player.Repeat()
         self.UpdateButtonImages()
+
+    def Mix(self) -> None:
+
+            self.player.Mix()
+            self.UpdateButtonImages()
+
+    def Next(self) -> None:
+
+        self.player.Next()
+        self.OpenMusic(self.player.index)
+
+    def Previous(self) -> None:
+
+        self.player.Previous()
+        self.OpenMusic(self.player.index)
+
 
     #endregion
     
@@ -781,11 +736,11 @@ class Application(Tk):
 
             if hasattr(self, 'index') and self.index:
 
-                self.database.Execute(f"UPDATE settings SET volume={self.volume}, last_folder={self.lastFolder}, last_music={self.index}, mix={1 if self.mix else 0}, repeat={1 if self.repeat else 0}")
+                self.database.Execute(f"UPDATE settings SET volume={self.volume}, last_folder={self.lastFolder}, last_music={self.index}, mix={1 if self.player.mix else 0}, repeat={1 if self.repeat else 0}")
 
             else:
 
-                self.database.Execute(f"UPDATE settings SET volume={self.volume}, mix={1 if self.mix else 0}, repeat={1 if self.repeat else 0}")
+                self.database.Execute(f"UPDATE settings SET volume={self.volume}, mix={1 if self.player.mix else 0}, repeat={1 if self.repeat else 0}")
 
             self.database.Commit()
             self.database.Disconnect()
